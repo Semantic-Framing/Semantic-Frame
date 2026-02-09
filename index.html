@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Shock–Recovery Dynamics of Childbirth-Related Keywords During the COVID-19 Pandemic</title>
+
+  <!-- Plotly -->
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <!-- PapaParse (CSV parsing) -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", Arial, sans-serif; margin: 0; }
+    header { padding: 18px 20px; border-bottom: 1px solid #eee; }
+    h1 { margin: 0 0 6px 0; font-size: 20px; }
+    .sub { color: #666; font-size: 13px; }
+    .wrap { display: grid; grid-template-columns: 360px 1fr; gap: 14px; padding: 14px; }
+    .panel { border: 1px solid #eee; border-radius: 12px; padding: 12px; }
+    .panel h2 { margin: 0 0 10px 0; font-size: 14px; }
+    label { display: block; font-size: 13px; margin: 8px 0 4px; color: #333; }
+    input[type="text"], input[type="number"] {
+      width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #ddd; border-radius: 10px; outline: none;
+    }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .checks { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .checks label { display: inline-flex; gap: 6px; margin: 0; }
+    details { border: 1px dashed #ddd; border-radius: 10px; padding: 8px 10px; margin-top: 10px; }
+    summary { cursor: pointer; font-size: 13px; color: #333; }
+    #plot { height: 820px; }
+    .hint { font-size: 12px; color: #666; margin-top: 6px; line-height: 1.35; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #f4f4f4; color: #333; }
+    .foot { margin-top: 10px; font-size: 12px; color: #666; line-height: 1.35; }
+    @media (max-width: 1100px){
+      .wrap { grid-template-columns: 1fr; }
+      #plot { height: 820px; }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>Shock–Recovery Dynamics of Childbirth-Related Keywords During the COVID-19 Pandemic <span class="badge" id="countBadge">0ea</span></h1>
+    <div class="sub">Interactive Micro/Macro Analysis · x = range2_mean − range1_mean, y = range3_mean − range2_mean</div>
+  </header>
+
+  <div class="wrap">
+    <!-- Control panel -->
+    <div class="panel">
+      <h2>Filter</h2>
+
+      <div class="hint">
+        This page automatically loads <b>data.csv</b>.
+      </div>
+
+      <label>Select between Micro and Macro</label>
+      <div class="checks">
+        <label><input type="checkbox" id="chkMicro" checked /> Micro <span style="color:red;">●</span></label>
+        <label><input type="checkbox" id="chkMacro" checked /> Macro <span style="color:blue;">●</span></label>
+      </div>
+
+      <label>Keyword Filter (Partial String Matching)</label>
+      <input id="searchWord" type="text" placeholder="e.g., childbirth, parental leave, Statistics Korea" />
+      
+      <label>sample_count</label> 
+      <input id="minCount" type="number" value="0" min="0" step="100" />
+      
+      <label>Show Labels</label>
+      <div class="checks">
+        <label><input type="checkbox" id="showLabels" checked /> Show Word Labels Above Points</label>
+      </div>
+
+      <!-- Y-axis fold/unfold -->
+      <details id="yAxisDetails">
+        <summary>Y-Axis Options (Click to Collapse/Expand)</summary>
+        <div style="margin-top:10px;">
+          <div class="checks">
+            <label><input type="checkbox" id="yAuto" checked /> Auto-Scale Y-Axis</label>
+            <label><input type="checkbox" id="yZero" checked /> Y=0 baseline</label>
+          </div>
+          <div class="row" style="margin-top:10px;">
+            <div>
+              <label>Y min</label>
+              <input id="yMin" type="number" step="0.0001" />
+            </div>
+            <div>
+              <label>Y max</label>
+              <input id="yMax" type="number" step="0.0001" />
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <details>
+        <summary>X-Axis Settings</summary>
+        <div style="margin-top:10px;">
+          <div class="checks">
+            <label><input type="checkbox" id="xAuto" checked /> Auto-Scale X-Axis</label>
+            <label><input type="checkbox" id="xZero" checked /> X=0 baseline</label>
+          </div>
+          <div class="row" style="margin-top:10px;">
+            <div>
+              <label>X min</label>
+              <input id="xMin" type="number" step="0.0001" />
+            </div>
+            <div>
+              <label>X max</label>
+              <input id="xMax" type="number" step="0.0001" />
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <div class="foot">
+        Classification Rule:<br/>
+        <b>- Macro(Red) → (range1 + range2 + range3)/3 ≥ 0<<br/>
+        <b>- Micro(Blue) → (range1 + range2 + range3)/3 &lt; 0<br/><br/>
+      
+        Axis Definition:<br/>
+        - x = (range2_mean - range1_mean)<br/>
+        - y = (range3_mean - range2_mean)
+      </div>
+    </div>
+
+    <!-- Plot -->
+    <div class="panel">
+      <div id="plot"></div>
+    </div>
+  </div>
+
+<script>
+  // =============================
+  // 0) CSV Filename (Located in the Same Directory)
+  // =============================
+  const CSV_PATH = "./data.csv";
+
+  // =============================
+  // 1) status
+  // =============================
+  let cleanRows = [];
+
+  const el = (id) => document.getElementById(id);
+
+  // =============================
+  // 2) util
+  // =============================
+  function toNum(v){
+    const x = (v === null || v === undefined) ? NaN : Number(v);
+    return Number.isFinite(x) ? x : NaN;
+  }
+
+  function prepare(rows){
+    const out = [];
+    for (const r of rows){
+      const word = (r.word ?? "").toString().trim();
+      const r1 = toNum(r.range1_mean);
+      const r2 = toNum(r.range2_mean);
+      const r3 = toNum(r.range3_mean);
+      if (!word || !Number.isFinite(r1) || !Number.isFinite(r2) || !Number.isFinite(r3)) continue;
+
+      const d1 = r2 - r1; // During - Before
+      const d2 = r3 - r2; // After - During
+      const group = (r3 >= 0) ? "Macro" : "Micro";
+
+      const sc = toNum(r.sample_count);
+      const sampleCount = Number.isFinite(sc) ? sc : null;
+
+      out.push({
+        word, d1, d2, group,
+        sample_count: sampleCount,
+        range1_mean: r1, range2_mean: r2, range3_mean: r3
+      });
+    }
+    return out;
+  }
+
+  function applyFilters(){
+    const useMicro = el("chkMicro").checked;
+    const useMacro = el("chkMacro").checked;
+
+    const query = el("searchWord").value.trim().toLowerCase();
+    const minCount = toNum(el("minCount").value) || 0;
+
+    let df = cleanRows.slice();
+
+    df = df.filter(d => {
+      if (d.group === "Micro" && !useMicro) return false;
+      if (d.group === "Macro" && !useMacro) return false;
+      if (query && !d.word.toLowerCase().includes(query)) return false;
+      if (d.sample_count !== null && d.sample_count < minCount) return false;
+      if (d.sample_count === null && minCount > 0) return false;
+      return true;
+    });
+
+    el("countBadge").textContent = `${df.length}ea`;
+    return df;
+  }
+
+  function setAxisDefaults(df){
+    if (!df.length) return;
+
+    const d2s = df.map(d => d.d2);
+    const d1s = df.map(d => d.d1);
+
+    const yMin = Math.min(...d2s), yMax = Math.max(...d2s);
+    const xMin = Math.min(...d1s), xMax = Math.max(...d1s);
+
+    if (el("yMin").value === "") el("yMin").value = yMin;
+    if (el("yMax").value === "") el("yMax").value = yMax;
+    if (el("xMin").value === "") el("xMin").value = xMin;
+    if (el("xMax").value === "") el("xMax").value = xMax;
+  }
+
+  function render(){
+    const df = applyFilters();
+    setAxisDefaults(df);
+
+    const showLabels = el("showLabels").checked;
+
+    const micro = df.filter(d => d.group === "Micro");
+    const macro = df.filter(d => d.group === "Macro");
+
+    const traceMacro = {
+      type: "scatter",
+      mode: showLabels ? "markers+text" : "markers",
+      name: "Macro",
+      x: macro.map(d => d.d1),
+      y: macro.map(d => d.d2),
+      text: macro.map(d => d.word),
+      textposition: "top center",
+      marker: { color: "blue", size: 10, opacity: 0.85 },
+      hovertemplate:
+        "<b>%{text}</b><br>" +
+        "group: Macro<br>" +
+        "d1 (range2-range1): %{x:.6f}<br>" +
+        "d2 (range3-range2): %{y:.6f}<br>" +
+        "<extra></extra>"
+    };
+
+    const traceMicro = {
+      type: "scatter",
+      mode: showLabels ? "markers+text" : "markers",
+      name: "Micro",
+      x: micro.map(d => d.d1),
+      y: micro.map(d => d.d2),
+      text: micro.map(d => d.word),
+      textposition: "top center",
+      marker: { color: "red", size: 10, opacity: 0.85 },
+      hovertemplate:
+        "<b>%{text}</b><br>" +
+        "group: Micro<br>" +
+        "d1 (range2-range1): %{x:.6f}<br>" +
+        "d2 (range3-range2): %{y:.6f}<br>" +
+        "<extra></extra>"
+    };
+
+    const yAuto = el("yAuto").checked;
+    const xAuto = el("xAuto").checked;
+    const yZero = el("yZero").checked;
+    const xZero = el("xZero").checked;
+
+    const layout = {
+      title: { text: "Shock–Recovery Dynamics of Childbirth-Related Keywords During the COVID-19 Pandemic", x: 0.02 },
+      xaxis: {
+        title: "d1: During - Before (Pandemic Shock)",
+        zeroline: xZero,
+        zerolinewidth: 2,
+        range: xAuto ? undefined : [toNum(el("xMin").value), toNum(el("xMax").value)]
+      },
+      yaxis: {
+        title: "d2: After - During (Pandemic Recovery)",
+        zeroline: yZero,
+        zerolinewidth: 2,
+        range: yAuto ? undefined : [toNum(el("yMin").value), toNum(el("yMax").value)]
+      },
+      legend: { title: { text: "Category" }, orientation: "h", x: 0.02, y: 1.03 },
+      margin: { l: 60, r: 30, t: 70, b: 60 },
+      height: 820,
+      hovermode: "closest"
+    };
+
+    Plotly.newPlot("plot", [traceMacro, traceMicro], layout, { responsive: true, displaylogo: false });
+  }
+
+  async function loadCSV(){
+    // loading using fetch
+    const res = await fetch(CSV_PATH, { cache: "no-store" });
+    if (!res.ok) {
+      const msg = `CSV File Could Not Be Loaded: ${CSV_PATH} (HTTP ${res.status})`;
+      Plotly.newPlot("plot", [], { title: { text: msg, x: 0.02 }, height: 600 }, { responsive: true });
+      return;
+    }
+    const text = await res.text();
+
+    Papa.parse(text, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (parsed) => {
+        cleanRows = prepare(parsed.data);
+        render();
+      }
+    });
+  }
+
+  // Auto-Update on Control Change
+  ["chkMicro","chkMacro","searchWord","minCount","showLabels","yAuto","yZero","yMin","yMax","xAuto","xZero","xMin","xMax"]
+    .forEach(id => el(id).addEventListener("input", () => {
+      if (cleanRows.length) render();
+    }));
+
+  // Initial placeholder
+  Plotly.newPlot("plot", [], {
+    title: { text: "Loading data.csv file...", x: 0.02 },
+    xaxis: { title: "d1: During - Before (Pandemic Shock)" },
+    yaxis: { title: "d2: After - During (Pandemic Recovery)" },
+    height: 600,
+    margin: { l: 60, r: 30, t: 70, b: 60 },
+  }, { responsive: true, displaylogo: false });
+
+  // Auto-Load on Page Load
+  loadCSV();
+</script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
